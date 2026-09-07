@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -47,6 +47,7 @@ const allowedOrigins = [
   'https://luxjson.is-a.dev',
   'https://api.luxjson.is-a.dev',
   'https://luxjson.github.io',
+  'https://luxjson.vercel.app',
 
   // React + Vite
   'http://localhost:5173',
