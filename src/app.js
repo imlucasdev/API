@@ -6,7 +6,6 @@ const morgan = require("morgan");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const hpp = require("hpp");
-const { apiReference } = require("@scalar/express-api-reference");
 const { env } = require("./config/env");
 const { pool } = require("./config/database");
 const swaggerSpec = require("./config/swagger");
@@ -14,6 +13,32 @@ const { errorHandler, notFoundHandler } = require("./middleware/errorHandler");
 const authRoutes = require("./routes/authRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const communityRoutes = require("./routes/communityRoutes");
+
+let scalarApiReferencePromise;
+
+function getScalarApiReferenceHandler() {
+  if (!scalarApiReferencePromise) {
+    scalarApiReferencePromise = import("@scalar/express-api-reference")
+      .then(({ apiReference }) =>
+        apiReference({
+          spec: { content: swaggerSpec },
+          theme: "purple",
+          pageTitle: "API Documentation | LUXJSON",
+          favicon: "https://luxjson.is-a.dev/favicon.ico",
+          showDeveloperTools: "never",
+          hideVersion: true,
+          hideDownloadButton: true,
+          hiddenClients: true,
+        }),
+      )
+      .catch((error) => {
+        scalarApiReferencePromise = undefined;
+        throw error;
+      });
+  }
+
+  return scalarApiReferencePromise;
+}
 
 morgan.token("path", (req) => req.path);
 
@@ -134,19 +159,14 @@ function createApp() {
     }
   });
 
-  app.use(
-    "/docs",
-    apiReference({
-      spec: { content: swaggerSpec },
-      theme: "purple",
-      pageTitle: "API Documentation | LUXJSON",
-      favicon: "https://luxjson.is-a.dev/favicon.ico",
-      showDeveloperTools: "never",
-      hideVersion: true,
-      hideDownloadButton: true,
-      hiddenClients: true,
-    }),
-  );
+  app.use("/docs", async (req, res, next) => {
+    try {
+      const handler = await getScalarApiReferenceHandler();
+      return handler(req, res, next);
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   app.get("/swagger.json", (_req, res) => {
     res.setHeader("Cache-Control", "no-store");
