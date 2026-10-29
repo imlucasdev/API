@@ -1,69 +1,49 @@
-const jwt = require('jsonwebtoken');
-const Admin = require('../models/Admin');
+"use strict";
+
+const jwt = require("jsonwebtoken");
+const AdminRepository = require("../repositories/admin.repository");
+const CommunityUsersRepository = require("../repositories/community-users.repository");
+const { env } = require("../config/env");
 
 function getBearerToken(req) {
-  const header = req.headers?.authorization;
-
-  if (typeof header !== 'string') return null;
-
+  const header = req.get("authorization");
+  if (typeof header !== "string") return null;
   const match = header.match(/^Bearer\s+(.+)$/i);
   return match ? match[1].trim() : null;
 }
 
 module.exports = async (req, res, next) => {
   const token = getBearerToken(req);
-
   if (!token) {
     req.authUser = null;
     req.user = null;
     return next();
   }
 
-  if (!process.env.JWT_SECRET) {
-    return res.status(500).json({
-      success: false,
-      message: 'JWT_SECRET não configurado',
-    });
-  }
-
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    if (!decoded || typeof decoded !== 'object' || !decoded.id) {
+    const decoded = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] });
+    const id = Number(decoded?.id);
+    if (!decoded || typeof decoded !== "object" || !Number.isSafeInteger(id) || id < 1) {
       req.authUser = null;
       req.user = null;
       return next();
     }
 
-    if (decoded.role === 'user' || decoded.role === 'admin') {
-      req.authUser = decoded;
-      req.user = decoded;
-      return next();
+    let identity = null;
+    if (decoded.role === "user") {
+      const user = await CommunityUsersRepository.findById(id);
+      if (user) identity = { id: user.id, username: user.username, role: "user" };
+    } else if (decoded.role === "admin" || !decoded.role) {
+      const admin = await AdminRepository.findById(id);
+      if (admin) identity = { id: admin.id, username: admin.username, role: "admin" };
     }
 
-    const admin = await Admin.findById(decoded.id);
-
-    req.authUser = admin
-      ? {
-          id: admin.id,
-          username: admin.username,
-          role: 'admin',
-        }
-      : null;
-    req.user = req.authUser;
-
+    req.authUser = identity;
+    req.user = identity;
     return next();
-  } catch (error) {
+  } catch {
     req.authUser = null;
     req.user = null;
-
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('[CommunityAuth] JWT verification failed:', {
-        name: error?.name,
-        message: error?.message,
-      });
-    }
-
     return next();
   }
 };

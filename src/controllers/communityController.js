@@ -1,10 +1,83 @@
-const {pool}=require('../config/database');
-const fields=`p.id,p.content,p.author_user_id,p.author_admin_id,p.is_admin_post,p.status,p.created_at,COALESCE(u.name,a.username) author_name,COALESCE(u.username,a.username) author_username,u.registration_number,u.avatar_url`;
-exports.getPosts=async(req,res,next)=>{try{const limit=Math.min(Math.max(parseInt(req.query.limit,10)||20,1),50),offset=Math.max(parseInt(req.query.offset,10)||0,0),uid=req.authUser?.role==='user'?req.authUser.id:null,aid=req.authUser?.role==='admin'?req.authUser.id:null;const r=await pool.query(`SELECT ${fields},COUNT(DISTINCT l.id)::int likes_count,EXISTS(SELECT 1 FROM community_likes cl WHERE cl.post_id=p.id AND ((cl.user_id=$3 AND $3 IS NOT NULL) OR (cl.admin_id=$4 AND $4 IS NOT NULL))) liked_by_me FROM community_posts p LEFT JOIN community_users u ON p.author_user_id=u.id LEFT JOIN admins a ON p.author_admin_id=a.id LEFT JOIN community_likes l ON l.post_id=p.id WHERE p.status IN ('active','approved') GROUP BY p.id,u.name,u.username,u.registration_number,u.avatar_url,a.username ORDER BY p.created_at DESC LIMIT $1 OFFSET $2`,[limit,offset,uid,aid]);const c=await pool.query(`SELECT COUNT(*)::int total FROM community_posts WHERE status IN ('active','approved')`);res.json({success:true,posts:r.rows,total:c.rows[0].total,limit,offset});}catch(e){next(e);}};
-exports.createPost=async(req,res,next)=>{try{const content=String(req.body?.content||'').trim();if(!content||content.length>500)return res.status(400).json({success:false,message:'O post deve ter entre 1 e 500 caracteres'});const admin=req.authUser.role==='admin';const r=await pool.query(`INSERT INTO community_posts(content,author_user_id,author_admin_id,is_admin_post) VALUES($1,$2,$3,$4) RETURNING id`,[content,admin?null:req.authUser.id,admin?req.authUser.id:null,admin]);const id=r.rows[0].id;const full=await pool.query(`SELECT ${fields},0::int likes_count,false::boolean liked_by_me FROM community_posts p LEFT JOIN community_users u ON p.author_user_id=u.id LEFT JOIN admins a ON p.author_admin_id=a.id WHERE p.id=$1`,[id]);res.status(201).json({success:true,post:full.rows[0]});}catch(e){next(e);}};
-exports.likePost=async(req,res,next)=>{try{const id=Number(req.params.id),uid=req.authUser.role==='user'?req.authUser.id:null,aid=req.authUser.role==='admin'?req.authUser.id:null;if(!(await pool.query(`SELECT id FROM community_posts WHERE id=$1 AND status IN ('active','approved')`,[id])).rowCount)return res.status(404).json({success:false,message:'Post não encontrado'});const x=await pool.query(`SELECT id FROM community_likes WHERE post_id=$1 AND ((user_id=$2 AND $2 IS NOT NULL) OR (admin_id=$3 AND $3 IS NOT NULL)) LIMIT 1`,[id,uid,aid]);let liked;if(x.rowCount){await pool.query(`DELETE FROM community_likes WHERE id=$1`,[x.rows[0].id]);liked=false;}else{await pool.query(`INSERT INTO community_likes(post_id,user_id,admin_id) VALUES($1,$2,$3)`,[id,uid,aid]);liked=true;}const c=await pool.query(`SELECT COUNT(*)::int likes_count FROM community_likes WHERE post_id=$1`,[id]);res.json({success:true,liked,likes_count:c.rows[0].likes_count});}catch(e){next(e);}};
-exports.reportPost=async(req,res,next)=>{try{const id=Number(req.params.id),p=await pool.query(`SELECT status FROM community_posts WHERE id=$1`,[id]);if(!p.rowCount)return res.status(404).json({success:false,message:'Post não encontrado'});const uid=req.authUser.role==='user'?req.authUser.id:null,aid=req.authUser.role==='admin'?req.authUser.id:null;await pool.query(`INSERT INTO community_reports(post_id,reporter_user_id,reporter_admin_id,reason) VALUES($1,$2,$3,$4)`,[id,uid,aid,String(req.body?.reason||'').trim()||null]);if(p.rows[0].status==='active')await pool.query(`UPDATE community_posts SET status='reported' WHERE id=$1`,[id]);res.json({success:true});}catch(e){next(e);}};
-exports.deletePost=async(req,res,next)=>{try{const id=Number(req.params.id),r=await pool.query(`SELECT author_user_id FROM community_posts WHERE id=$1`,[id]);if(!r.rowCount)return res.status(404).json({success:false,message:'Post não encontrado'});if(req.authUser.role==='user'&&Number(r.rows[0].author_user_id)!==Number(req.authUser.id))return res.status(403).json({success:false,message:'Você só pode excluir seus próprios posts'});await pool.query(`DELETE FROM community_posts WHERE id=$1`,[id]);res.json({success:true});}catch(e){next(e);}};
-exports.getUserPosts=async(req,res,next)=>{try{const id=req.authUser.role==='admin'?Number(req.params.id):Number(req.authUser.id);if(req.authUser.role==='user'&&id!==Number(req.authUser.id))return res.status(403).json({success:false,message:'Acesso negado'});const r=await pool.query(`SELECT ${fields},COUNT(DISTINCT l.id)::int likes_count FROM community_posts p LEFT JOIN community_users u ON p.author_user_id=u.id LEFT JOIN admins a ON p.author_admin_id=a.id LEFT JOIN community_likes l ON l.post_id=p.id WHERE p.author_user_id=$1 GROUP BY p.id,u.name,u.username,u.registration_number,u.avatar_url,a.username ORDER BY p.created_at DESC`,[id]);res.json({success:true,posts:r.rows});}catch(e){next(e);}};
-exports.getReportedPosts=async(req,res,next)=>{try{const r=await pool.query(`SELECT ${fields},cr.id report_id,cr.reason report_reason,cr.created_at reported_at,COALESCE(ru.name,ra.username) reporter_name,COALESCE(ru.username,ra.username) reporter_username,ru.registration_number reporter_registration_number FROM community_posts p LEFT JOIN community_users u ON p.author_user_id=u.id LEFT JOIN admins a ON p.author_admin_id=a.id JOIN community_reports cr ON cr.post_id=p.id LEFT JOIN community_users ru ON cr.reporter_user_id=ru.id LEFT JOIN admins ra ON cr.reporter_admin_id=ra.id WHERE p.status='reported' ORDER BY cr.created_at DESC`);res.json({success:true,posts:r.rows,total:r.rowCount});}catch(e){next(e);}};
-exports.moderatePost=async(req,res,next)=>{try{const action=req.body?.action;if(!['approve','remove'].includes(action))return res.status(400).json({success:false,message:'Action must be approve or remove'});const r=await pool.query(`UPDATE community_posts SET status=$1 WHERE id=$2 AND status='reported' RETURNING *`,[action==='approve'?'active':'removed',Number(req.params.id)]);if(!r.rowCount)return res.status(404).json({success:false,message:'Denúncia não encontrada'});res.json({success:true,post:r.rows[0]});}catch(e){next(e);}};
+"use strict";
+
+const CommunityService = require("../services/community.service");
+
+exports.getPosts = async (req, res, next) => {
+  try {
+    const limit = req.validated?.query?.limit ?? 20;
+    const offset = req.validated?.query?.offset ?? 0;
+    const result = await CommunityService.listPosts({ limit, offset }, req.authUser);
+    return res.json({ success: true, ...result, limit, offset });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.createPost = async (req, res, next) => {
+  try {
+    const post = await CommunityService.createPost(req.validated.body.content, req.authUser);
+    return res.status(201).json({ success: true, post });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.likePost = async (req, res, next) => {
+  try {
+    const result = await CommunityService.toggleLike(req.validated.params.id, req.authUser);
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.reportPost = async (req, res, next) => {
+  try {
+    await CommunityService.reportPost(
+      req.validated.params.id,
+      req.validated.body.reason,
+      req.authUser,
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.deletePost = async (req, res, next) => {
+  try {
+    await CommunityService.deletePost(req.validated.params.id, req.authUser);
+    return res.json({ success: true });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.getUserPosts = async (req, res, next) => {
+  try {
+    const posts = await CommunityService.getUserPosts(req.validated.params.id, req.authUser);
+    return res.json({ success: true, posts });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.getReportedPosts = async (_req, res, next) => {
+  try {
+    return res.json({ success: true, ...(await CommunityService.getReportedPosts()) });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.moderatePost = async (req, res, next) => {
+  try {
+    const post = await CommunityService.moderatePost(
+      req.validated.params.id,
+      req.validated.body.action,
+    );
+    return res.json({ success: true, post });
+  } catch (error) {
+    return next(error);
+  }
+};

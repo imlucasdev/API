@@ -1,78 +1,47 @@
-const express=require('express');const authFlex=require('../middleware/authFlex'),requireUser=require('../middleware/requireUser');const ac=require('../controllers/communityAuthController'),cc=require('../controllers/communityController');const router=express.Router();const adminOnly=(req,res,next)=>req.authUser?.role==='admin'?next():res.status(403).json({success:false,message:'Admin access required'});
-/** @swagger
- * /api/community/auth/register:
- *   post:
- *     summary: Register a community user
- *     responses: {201: {description: User created}, 409: {description: Username already in use}}
- */router.post('/auth/register',ac.register);
-/** @swagger
- * /api/community/auth/login:
- *   post:
- *     summary: Authenticate a community user or admin
- *     responses: {200: {description: JWT returned}, 401: {description: Invalid credentials}}
- */router.post('/auth/login',ac.loginUser);
-/** @swagger
- * /api/community/auth/me:
- *   get:
- *     summary: Return the authenticated account (Authentication Required)
- *     security: [{BearerAuth: []}]
- *     responses: {200: {description: Current account}, 401: {description: Unauthorized}}
- */router.get('/auth/me',authFlex,requireUser,ac.meUser);
-/** @swagger
- * /api/community/auth/profile:
- *   put:
- *     summary: Update community profile (Authentication Required)
- *     security: [{BearerAuth: []}]
- *     responses: {200: {description: Profile updated}}
- */router.put('/auth/profile',authFlex,requireUser,ac.updateProfile);
-/** @swagger
- * /api/community/posts:
- *   get:
- *     summary: List public community posts
- *     responses: {200: {description: Feed}}
- */router.get('/posts',authFlex,cc.getPosts);
-/** @swagger
- * /api/community/posts:
- *   post:
- *     summary: Create a community post (Authentication Required)
- *     security: [{BearerAuth: []}]
- *     responses: {201: {description: Post created}}
- */router.post('/posts',authFlex,requireUser,cc.createPost);
-/** @swagger
- * /api/community/posts/{id}:
- *   delete:
- *     summary: Delete a community post (Authentication Required)
- *     security: [{BearerAuth: []}]
- *     responses: {200: {description: Deleted}}
- */router.delete('/posts/:id',authFlex,requireUser,cc.deletePost);
-/** @swagger
- * /api/community/posts/{id}/like:
- *   post:
- *     summary: Toggle a post like (Authentication Required)
- *     security: [{BearerAuth: []}]
- */router.post('/posts/:id/like',authFlex,requireUser,cc.likePost);
-/** @swagger
- * /api/community/posts/{id}/report:
- *   post:
- *     summary: Report a community post (Authentication Required)
- *     security: [{BearerAuth: []}]
- */router.post('/posts/:id/report',authFlex,requireUser,cc.reportPost);
-/** @swagger
- * /api/community/users/{id}/posts:
- *   get:
- *     summary: List user posts (Authentication Required)
- *     security: [{BearerAuth: []}]
- */router.get('/users/:id/posts',authFlex,requireUser,cc.getUserPosts);
-/** @swagger
- * /api/community/admin/reports:
- *   get:
- *     summary: List reported posts (Authentication Required)
- *     security: [{BearerAuth: []}]
- */router.get('/admin/reports',authFlex,requireUser,adminOnly,cc.getReportedPosts);
-/** @swagger
- * /api/community/admin/posts/{id}/moderate:
- *   put:
- *     summary: Moderate a reported post (Authentication Required)
- *     security: [{BearerAuth: []}]
- */router.put('/admin/posts/:id/moderate',authFlex,requireUser,adminOnly,cc.moderatePost);
-module.exports=router;
+"use strict";
+
+const express = require("express");
+const rateLimit = require("express-rate-limit");
+const authFlex = require("../middleware/authFlex");
+const requireUser = require("../middleware/requireUser");
+const { validate } = require("../middleware/validate");
+const authController = require("../controllers/communityAuthController");
+const controller = require("../controllers/communityController");
+const authSchemas = require("../validators/community-auth.validators");
+const schemas = require("../validators/community.validators");
+const router = express.Router();
+
+function makeLimiter(limit, windowMs = 15 * 60_000) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (_req, res) =>
+      res.status(429).json({ success: false, code: "RATE_LIMITED", message: "Too many requests." }),
+  });
+}
+
+const authWriteLimiter = makeLimiter(10);
+const communityWriteLimiter = makeLimiter(60);
+const communityReadLimiter = makeLimiter(120, 60_000);
+const adminOnly = (req, res, next) =>
+  req.authUser?.role === "admin"
+    ? next()
+    : res.status(403).json({ success: false, code: "ADMIN_REQUIRED", message: "Acesso administrativo necessário." });
+
+router.post("/auth/register", authWriteLimiter, validate(authSchemas.register), authController.register);
+router.post("/auth/login", authWriteLimiter, validate(authSchemas.login), authController.loginUser);
+router.get("/auth/me", authFlex, requireUser, authController.meUser);
+router.put("/auth/profile", communityWriteLimiter, authFlex, requireUser, validate(authSchemas.updateProfile), authController.updateProfile);
+
+router.get("/posts", communityReadLimiter, authFlex, validate(schemas.listQuery, "query"), controller.getPosts);
+router.post("/posts", communityWriteLimiter, authFlex, requireUser, validate(schemas.createPost), controller.createPost);
+router.delete("/posts/:id", communityWriteLimiter, authFlex, requireUser, validate(schemas.positiveId, "params"), controller.deletePost);
+router.post("/posts/:id/like", communityWriteLimiter, authFlex, requireUser, validate(schemas.positiveId, "params"), controller.likePost);
+router.post("/posts/:id/report", communityWriteLimiter, authFlex, requireUser, validate(schemas.positiveId, "params"), validate(schemas.reportPost), controller.reportPost);
+router.get("/users/:id/posts", communityReadLimiter, authFlex, requireUser, validate(schemas.positiveId, "params"), controller.getUserPosts);
+router.get("/admin/reports", communityReadLimiter, authFlex, requireUser, adminOnly, controller.getReportedPosts);
+router.put("/admin/posts/:id/moderate", communityWriteLimiter, authFlex, requireUser, adminOnly, validate(schemas.positiveId, "params"), validate(schemas.moderatePost), controller.moderatePost);
+
+module.exports = router;

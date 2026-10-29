@@ -1,52 +1,55 @@
-const jwt = require('jsonwebtoken');
+"use strict";
 
-const authMiddleware = (req, res, next) => {
-    const authHeader = req.headers.authorization;
+const jwt = require("jsonwebtoken");
+const AdminRepository = require("../repositories/admin.repository");
+const { env } = require("../config/env");
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({
-            success: false,
-            message: 'Token not found',
-        });
+module.exports = async (req, res, next) => {
+  const header = req.get("authorization");
+  if (typeof header !== "string" || !/^Bearer\s+\S+$/i.test(header)) {
+    return res.status(401).json({
+      success: false,
+      code: "AUTH_REQUIRED",
+      message: "Autenticação necessária.",
+    });
+  }
+
+  try {
+    const token = header.replace(/^Bearer\s+/i, "").trim();
+    const decoded = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] });
+    const id = Number(decoded?.id);
+
+    if (
+      !decoded ||
+      typeof decoded !== "object" ||
+      decoded.role !== "admin" ||
+      !Number.isSafeInteger(id) ||
+      id < 1
+    ) {
+      return res.status(403).json({
+        success: false,
+        code: "ADMIN_REQUIRED",
+        message: "Acesso administrativo necessário.",
+      });
     }
 
-    const token = authHeader.substring(7).trim();
-
-    if (!token) {
-        return res.status(401).json({
-            success: false,
-            message: 'Token not found',
-        });
+    const admin = await AdminRepository.findById(id);
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        code: "INVALID_SESSION",
+        message: "Sessão inválida ou expirada.",
+      });
     }
 
-    if (!process.env.JWT_SECRET) {
-        console.error('JWT_SECRET não configurado.');
-        return res.status(500).json({
-            success: false,
-            message: 'JWT configuration error',
-        });
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        if (!decoded || decoded.role !== 'admin' || !decoded.id) {
-            return res.status(403).json({
-                success: false,
-                message: 'Admin access required',
-            });
-        }
-
-        req.user = decoded;
-        req.admin = decoded;
-        next();
-    } catch (error) {
-        console.error('JWT validation error:', error.message);
-        return res.status(401).json({
-            success: false,
-            message: 'Invalid or expired token',
-        });
-    }
+    req.user = { id: admin.id, username: admin.username, role: "admin" };
+    req.admin = req.user;
+    return next();
+  } catch {
+    return res.status(401).json({
+      success: false,
+      code: "INVALID_SESSION",
+      message: "Sessão inválida ou expirada.",
+    });
+  }
 };
-
-module.exports = authMiddleware;

@@ -1,338 +1,39 @@
-const express = require('express');
+"use strict";
+
+const express = require("express");
+const rateLimit = require("express-rate-limit");
+const authMiddleware = require("../middleware/auth");
+const authFlex = require("../middleware/authFlex");
+const { validate } = require("../middleware/validate");
+const controller = require("../controllers/blogController");
+const {
+  blogListQuery,
+  createBlogPost,
+  updateBlogPost,
+  idParams,
+  slugParams,
+} = require("../validators/blog.validators");
+
 const router = express.Router();
-const authMiddleware = require('../middleware/auth');
-const BlogPost = require('../models/BlogPost');
-const sanitizeHtml = require('sanitize-html');
-const { slugify } = require('../utils/helpers');
-
-
-/**
- * @swagger
- * /api/blog/posts:
- *   get:
- *     summary: List all published posts
- *     parameters:
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *         description: Maximum number of posts per page (max 50)
- *       - in: query
- *         name: offset
- *         schema:
- *           type: integer
- *         description: Offset for pagination
- *     responses:
- *       200:
- *         description: Successfully retrieved the list of posts
- */
-router.get('/posts', async (req, res, next) => {
-  try {
-    const limit = Math.min(
-      Math.max(Number.parseInt(req.query.limit, 10) || 10, 1),
-      50
-    );
-
-    const offset = Math.max(
-      Number.parseInt(req.query.offset, 10) || 0,
-      0
-    );
-
-    const posts = await BlogPost.findAll({
-      limit,
-      offset,
-      publishedOnly: true,
-    });
-
-    res.json({ success: true, posts });
-  } catch (error) {
-    next(error);
-  }
+const readLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const writeLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
-/**
- * @swagger
- * /api/blog/posts/{slug}:
- *   get:
- *     summary: Retrieve a published post by slug and increment views
- *     parameters:
- *       - in: path
- *         name: slug
- *         required: true
- *         schema:
- *           type: string
- *         description: Post slug
- *     responses:
- *       200:
- *         description: Post successfully found
- *       404:
- *         description: Post not found or not published
- */
-router.get('/posts/:slug', async (req, res, next) => {
-  try {
-    const post = await BlogPost.findBySlug(req.params.slug);
-
-    if (!post || !post.published) {
-      return res.status(404).json({
-        success: false,
-        message: 'Post not found or not published'
-      });
-    }
-
-    await BlogPost.incrementViews(req.params.slug);
-
-    res.json({
-      success: true,
-      post
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /api/blog/stats:
- *   get:
- *     summary: Return general blog statistics (Authentication Required)
- *     security:
- *       - BearerAuth: []
- *     responses:
- *       200:
- *         description: Statistics successfully retrieved
- *       401:
- *         description: Unauthorized (Missing or invalid token)
- */
-router.get('/stats', authMiddleware, async (req, res, next) => {
-  try {
-    const stats = await BlogPost.getStats();
-    res.json(stats);
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /api/blog/posts:
- *   post:
- *     summary: Create a new post (Authentication Required)
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - title
- *               - content
- *             properties:
- *               title:
- *                 type: string
- *               content:
- *                 type: string
- *               excerpt:
- *                 type: string
- *               cover_image:
- *                 type: string
- *               published:
- *                 type: boolean
- *     responses:
- *       201:
- *         description: Post successfully created
- *       400:
- *         description: Title or content are required
- */
-router.post('/posts', authMiddleware, async (req, res, next) => {
-  try {
-    const { title, content, excerpt, cover_image, published = false } = req.body;
-    if (!title || !content) {
-      return res.status(400).json({ success: false, message: 'Title and content are required' });
-    }
-    const slug = slugify(title);
-    const cleanContent = sanitizeHtml(content, {
-      allowedTags: [
-        'p',
-        'br',
-        'strong',
-        'em',
-        'u',
-        's',
-        'h1',
-        'h2',
-        'h3',
-        'h4',
-        'ul',
-        'ol',
-        'li',
-        'blockquote',
-        'code',
-        'pre',
-        'a'
-      ],
-      allowedAttributes: {
-        a: ['href', 'target', 'rel']
-      },
-      allowedSchemes: ['http', 'https', 'mailto']
-    });
-
-    const post = await BlogPost.create({
-      title,
-      slug,
-      content: cleanContent,
-      excerpt,
-      cover_image,
-      author_id: req.admin.id,
-      published,
-    });
-    res.status(201).json({ success: true, post });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /api/blog/posts/id/{id}:
- *   get:
- *     summary: Retrieve a post by ID (Authentication Required)
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: Post ID
- *     responses:
- *       200:
- *         description: Post successfully found
- *       404:
- *         description: Post not found
- */
-router.get('/posts/id/:id', authMiddleware, async (req, res, next) => {
-  try {
-    const post = await BlogPost.findById(req.params.id);
-
-    if (!post) {
-      return res.status(404).json({
-        success: false,
-        message: 'Post not found'
-      });
-    }
-
-    res.json({
-      success: true,
-      post
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /api/blog/posts/{id}:
- *   put:
- *     summary: Update an existing post (Authentication Required)
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID of the post to update
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               title:
- *                 type: string
- *               content:
- *                 type: string
- *               excerpt:
- *                 type: string
- *               cover_image:
- *                 type: string
- *               published:
- *                 type: boolean
- *     responses:
- *       200:
- *         description: Post successfully updated
- *       404:
- *         description: Post not found
- */
-router.put('/posts/:id', authMiddleware, async (req, res, next) => {
-  try {
-    const { title, content, excerpt, cover_image, published } = req.body;
-    const data = {};
-    if (title) {
-      data.title = title;
-      data.slug = slugify(title);
-    }
-   if (content !== undefined) {
-      data.content = sanitizeHtml(content, {
-        allowedTags: [
-          'p', 'br', 'strong', 'em', 'u', 's',
-          'h1', 'h2', 'h3', 'h4',
-          'ul', 'ol', 'li',
-          'blockquote', 'code', 'pre', 'a'
-        ],
-        allowedAttributes: {
-          a: ['href', 'target', 'rel']
-        },
-        allowedSchemes: ['http', 'https', 'mailto']
-      });
-    }
-    if (excerpt !== undefined) data.excerpt = excerpt;
-    if (cover_image !== undefined) data.cover_image = cover_image;
-    if (published !== undefined) data.published = published;
-
-    const post = await BlogPost.update(req.params.id, data);
-    if (!post) {
-      return res.status(404).json({ success: false, message: 'Post not found' });
-    }
-    res.json({ success: true, post });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /api/blog/posts/{id}:
- *   delete:
- *     summary: Delete a post by ID (Authentication Required)
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID of the post to delete
- *     responses:
- *       200:
- *         description: Post successfully deleted
- *       404:
- *         description: Post not found
- */
-router.delete('/posts/:id', authMiddleware, async (req, res, next) => {
-  try {
-    await BlogPost.delete(req.params.id);
-    res.json({ success: true, message: 'Post deleted successfully' });
-  } catch (error) {
-    next(error);
-  }
-});
+router.get("/posts", readLimiter, authFlex, validate(blogListQuery, "query"), controller.list);
+router.get("/posts/:slug", readLimiter, validate(slugParams, "params"), controller.getPublished);
+router.get("/stats", authMiddleware, controller.stats);
+router.post("/posts", authMiddleware, writeLimiter, validate(createBlogPost), controller.create);
+router.get("/posts/id/:id", authMiddleware, validate(idParams, "params"), controller.getForAdmin);
+router.put("/posts/:id", authMiddleware, writeLimiter, validate(idParams, "params"), validate(updateBlogPost), controller.update);
+router.delete("/posts/:id", authMiddleware, writeLimiter, validate(idParams, "params"), controller.remove);
 
 module.exports = router;
