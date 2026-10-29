@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: luxjson-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    maxShutdownDelaySeconds: 15
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 24
+      - key: DATABASE_POOL_SIZE
+        value: 5
+      - key: DATABASE_SSL_REJECT_UNAUTHORIZED
+        value: true
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        value: https://luxjson.is-a.dev
+      - key: CORS_ORIGINS
+        value: https://luxjson.is-a.dev,https://luxjson.github.io,https://luxjson.vercel.app

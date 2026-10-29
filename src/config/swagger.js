@@ -1,32 +1,33 @@
-const swaggerJSDoc = require('swagger-jsdoc');
-const swaggerUi = require('swagger-ui-express');
+"use strict";
+
+const swaggerJSDoc = require("swagger-jsdoc");
 
 const options = {
   definition: {
+    openapi: "3.0.3",
     info: {
-        title: 'LUXJSON API',
-        description: 'Welcome to the official API documentation. <br/> **Note:** Endpoints marked with a lock require a valid JWT Token to execute.',
+      title: "LUXJSON API",
+      version: "1.1.0",
+      description: "API for the LUXJSON portfolio, blog and community.",
     },
     servers: [
       {
-        url: 'https://api.luxjson.is-a.dev', // url de producao da api [api.luxjson.is-a.dev]
-        description: 'LUXJSON API',
+        url: "https://api.luxjson.is-a.dev",
+        description: "Production API",
       },
     ],
     components: {
       securitySchemes: {
         BearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-          description: 'Paste your JWT token here',
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description: "Administrator or community access token.",
         },
       },
     },
   },
-  apis: ['./src/routes/*.js', './server.js'],
+  apis: ["./src/routes/*.js", "./server.js"],
 };
 
-const swaggerSpec = swaggerJSDoc(options);
-
-module.exports = swaggerSpec;
+module.exports = swaggerJSDoc(options);

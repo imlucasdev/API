@@ -1,8 +1,40 @@
-const bcrypt=require('bcrypt'),jwt=require('jsonwebtoken');const {pool}=require('../config/database');const Admin=require('../models/Admin');const CommunityUser=require('../models/CommunityUser');
-const pub=u=>({id:u.id,registration_number:u.registration_number,name:u.name,username:u.username,avatar_url:u.avatar_url,created_at:u.created_at,updated_at:u.updated_at});
-const sign=p=>jwt.sign(p,process.env.JWT_SECRET,{expiresIn:'7d'});
-async function exists(username,excludeId=null){const r=await pool.query(`SELECT COUNT(*)::int count FROM (SELECT username FROM community_users WHERE LOWER(username)=LOWER($1) AND ($2::int IS NULL OR id!=$2) UNION ALL SELECT username FROM admins WHERE LOWER(username)=LOWER($1)) t`,[username,excludeId]);return r.rows[0].count>0;}
-exports.register=async(req,res,next)=>{try{const name=String(req.body?.name||'').trim(),username=String(req.body?.username||'').trim(),password=String(req.body?.password||''),confirmPassword=String(req.body?.confirmPassword||'');if(!name||!username||!password||!confirmPassword)return res.status(400).json({success:false,message:'Nome, username e senha são obrigatórios'});if(name.length>100||username.length>50)return res.status(400).json({success:false,message:'Nome ou username excede o limite permitido'});if(password!==confirmPassword)return res.status(400).json({success:false,message:'As senhas não coincidem.'});if(password.length<6)return res.status(400).json({success:false,message:'A senha deve ter pelo menos 6 caracteres.'});if(await exists(username))return res.status(409).json({success:false,message:'Este username já está em uso.'});const u=await CommunityUser.create({name,username,passwordHash:await bcrypt.hash(password,12)});res.status(201).json({success:true,user:pub(u)});}catch(e){if(e.code==='23505')return res.status(409).json({success:false,message:'Este username já está em uso.'});next(e);}};
-exports.loginUser=async(req,res,next)=>{try{const username=String(req.body?.username||'').trim(),password=String(req.body?.password||'');if(!username||!password)return res.status(400).json({success:false,message:'Usuário e senha são obrigatórios'});const u=await CommunityUser.findByUsername(username);if(u){if(!await bcrypt.compare(password,u.password_hash))return res.status(401).json({success:false,message:'Credenciais inválidas'});return res.json({success:true,token:sign({id:u.id,username:u.username,role:'user',registration_number:u.registration_number}),role:'user',user:pub(u)});}const ad=await Admin.findByUsername(username);if(!ad||!await bcrypt.compare(password,ad.password_hash))return res.status(401).json({success:false,message:'Credenciais inválidas'});res.json({success:true,token:sign({id:ad.id,username:ad.username,role:'admin'}),role:'admin',admin:{id:ad.id,username:ad.username,created_at:ad.created_at}});}catch(e){next(e);}};
-exports.meUser=async(req,res,next)=>{try{if(req.authUser.role==='admin'){const ad=await Admin.findById(req.authUser.id);if(!ad)return res.status(404).json({success:false,message:'Admin não encontrado'});return res.json({success:true,role:'admin',admin:ad});}const u=await CommunityUser.findById(req.authUser.id);if(!u)return res.status(404).json({success:false,message:'Usuário não encontrado'});res.json({success:true,role:'user',user:u});}catch(e){next(e);}};
-exports.updateProfile=async(req,res,next)=>{try{if(req.authUser.role!=='user')return res.status(403).json({success:false,message:'Apenas usuários da comunidade podem editar este perfil'});const f={};if(req.body?.name!==undefined){f.name=String(req.body.name).trim();if(!f.name||f.name.length>100)return res.status(400).json({success:false,message:'Nome inválido'});}if(req.body?.username!==undefined){f.username=String(req.body.username).trim();if(!f.username||f.username.length>50)return res.status(400).json({success:false,message:'Username inválido'});if(await exists(f.username,req.authUser.id))return res.status(409).json({success:false,message:'Este username já está em uso.'});}if(req.body?.avatar_url!==undefined)f.avatar_url=String(req.body.avatar_url||'').trim()||null;res.json({success:true,user:await CommunityUser.update(req.authUser.id,f)});}catch(e){if(e.code==='23505')return res.status(409).json({success:false,message:'Este username já está em uso.'});next(e);}};
+"use strict";
+
+const CommunityAuthService = require("../services/community-auth.service");
+
+exports.register = async (req, res, next) => {
+  try {
+    const user = await CommunityAuthService.registerUser(req.validated.body);
+    return res.status(201).json({ success: true, user });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.loginUser = async (req, res, next) => {
+  try {
+    return res.json(await CommunityAuthService.login(
+      req.validated.body.username,
+      req.validated.body.password,
+    ));
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.meUser = async (req, res, next) => {
+  try {
+    return res.json({ success: true, ...(await CommunityAuthService.getCurrentAccount(req.authUser)) });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.updateProfile = async (req, res, next) => {
+  try {
+    const user = await CommunityAuthService.updateProfile(req.authUser, req.validated.body);
+    return res.json({ success: true, user });
+  } catch (error) {
+    return next(error);
+  }
+};
