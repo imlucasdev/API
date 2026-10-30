@@ -1,3 +1,7 @@
+"use strict";
+
+console.info(`[runtime] LUXJSON API Node.js ${process.version}`);
+
 const path = require("node:path");
 const express = require("express");
 const cors = require("cors");
@@ -13,8 +17,6 @@ const { errorHandler, notFoundHandler } = require("./middleware/errorHandler");
 const authRoutes = require("./routes/authRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const communityRoutes = require("./routes/communityRoutes");
-
-console.info(`[runtime] LUXJSON API Node.js ${process.version}`);
 
 let scalarApiReferencePromise;
 
