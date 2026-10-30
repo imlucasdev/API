@@ -1,4 +1,4 @@
-name: Audit production integration smoke
+name: Audit Vercel preview integration smoke
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Verify public site and API contracts
+      - name: Verify portfolio and Vercel preview API contracts
         run: |
           node --input-type=module <<'NODE'
           const checks = [];
@@ -34,22 +34,22 @@ jobs:
           const siteHtml = await site.text();
           if (!siteHtml.toLowerCase().includes("<title>luxjson</title>")) throw new Error("Portfolio HTML title is missing.");
 
-          const health = await request("API health", "https://api.luxjson.is-a.dev/api/health");
+          const health = await request("API health", "https://api-git-audit-api-flow-hardening-20261029-luxjson.vercel.app/api/health");
           const healthJson = await health.json();
           if (healthJson.status !== "ok") throw new Error("API health did not report status=ok.");
 
-          const blog = await request("published blog list", "https://api.luxjson.is-a.dev/api/blog/posts?limit=5&publishedOnly=true");
+          const blog = await request("published blog list", "https://api-git-audit-api-flow-hardening-20261029-luxjson.vercel.app/api/blog/posts?limit=5&publishedOnly=true");
           const blogJson = await blog.json();
           if (blogJson.success !== true || !Array.isArray(blogJson.posts)) throw new Error("Published blog list contract is invalid.");
 
-          const specResponse = await request("OpenAPI document", "https://api.luxjson.is-a.dev/swagger.json");
+          const specResponse = await request("OpenAPI document", "https://api-git-audit-api-flow-hardening-20261029-luxjson.vercel.app/swagger.json");
           const spec = await specResponse.json();
           if (!spec.paths?.["/api/blog/posts"] || !spec.paths?.["/api/community/posts"]) throw new Error("OpenAPI document is missing route contracts.");
 
-          await request("Scalar docs", "https://api.luxjson.is-a.dev/docs");
-          await request("API landing page", "https://api.luxjson.is-a.dev/");
+          await request("Scalar docs", "https://api-git-audit-api-flow-hardening-20261029-luxjson.vercel.app/docs");
+          await request("API landing page", "https://api-git-audit-api-flow-hardening-20261029-luxjson.vercel.app/");
 
-          const preflight = await fetch("https://api.luxjson.is-a.dev/api/blog/posts", {
+          const preflight = await fetch("https://api-git-audit-api-flow-hardening-20261029-luxjson.vercel.app/api/blog/posts", {
             method: "OPTIONS",
             headers: {
               Origin: "https://luxjson.is-a.dev",
