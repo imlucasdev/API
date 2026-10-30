@@ -6,7 +6,7 @@ const { env } = require("../config/env");
 
 module.exports = async (req, res, next) => {
   const header = req.get("authorization");
-  if (typeof header !== "string" || !/^Bearer\s+\S+$/i.test(header)) {
+  if (typeof header !== "string" || !/^Bearer\\s+\\S+$/i.test(header)) {
     return res.status(401).json({
       success: false,
       code: "AUTH_REQUIRED",
@@ -14,25 +14,34 @@ module.exports = async (req, res, next) => {
     });
   }
 
+  let decoded;
   try {
-    const token = header.replace(/^Bearer\s+/i, "").trim();
-    const decoded = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] });
-    const id = Number(decoded?.id);
+    const token = header.replace(/^Bearer\\s+/i, "").trim();
+    decoded = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] });
+  } catch {
+    return res.status(401).json({
+      success: false,
+      code: "INVALID_SESSION",
+      message: "Sessão inválida ou expirada.",
+    });
+  }
 
-    if (
-      !decoded ||
-      typeof decoded !== "object" ||
-      decoded.role !== "admin" ||
-      !Number.isSafeInteger(id) ||
-      id < 1
-    ) {
-      return res.status(403).json({
-        success: false,
-        code: "ADMIN_REQUIRED",
-        message: "Acesso administrativo necessário.",
-      });
-    }
+  const id = Number(decoded?.id);
+  if (
+    !decoded ||
+    typeof decoded !== "object" ||
+    decoded.role !== "admin" ||
+    !Number.isSafeInteger(id) ||
+    id < 1
+  ) {
+    return res.status(403).json({
+      success: false,
+      code: "ADMIN_REQUIRED",
+      message: "Acesso administrativo necessário.",
+    });
+  }
 
+  try {
     const admin = await AdminRepository.findById(id);
     if (!admin) {
       return res.status(401).json({
@@ -45,11 +54,7 @@ module.exports = async (req, res, next) => {
     req.user = { id: admin.id, username: admin.username, role: "admin" };
     req.admin = req.user;
     return next();
-  } catch {
-    return res.status(401).json({
-      success: false,
-      code: "INVALID_SESSION",
-      message: "Sessão inválida ou expirada.",
-    });
+  } catch (error) {
+    return next(error);
   }
 };
