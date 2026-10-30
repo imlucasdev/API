@@ -28,7 +28,7 @@ jobs:
 
           const site = await request("portfolio home", "https://luxjson.is-a.dev/");
           const siteHtml = await site.text();
-          if (!/<title>luxjson<\\/title>/i.test(siteHtml)) throw new Error("Portfolio HTML title is missing.");
+          if (!siteHtml.toLowerCase().includes("<title>luxjson</title>")) throw new Error("Portfolio HTML title is missing.");
 
           const health = await request("API health", "https://api.luxjson.is-a.dev/api/health");
           const healthJson = await health.json();
