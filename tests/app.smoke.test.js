@@ -8,8 +8,15 @@ process.env.CORS_ORIGINS = "http://localhost:5173";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createApp } = require("../src/app");
+const exportedExpressApp = require("../src/app");
+const { createApp } = exportedExpressApp;
 const { pool } = require("../src/config/database");
+
+test("Vercel-recognized Express entry exports an application instance", () => {
+  assert.equal(typeof exportedExpressApp, "function");
+  assert.equal(typeof exportedExpressApp.createApp, "function");
+  assert.equal(typeof exportedExpressApp.listen, "function");
+});
 
 test("API app boots and serves the expected public surfaces securely", async (t) => {
   const app = createApp();
@@ -41,6 +48,12 @@ test("API app boots and serves the expected public surfaces securely", async (t)
   const spec = await specResponse.json();
   assert.equal(spec.openapi, "3.0.3");
   assert.equal(spec.servers[0].url, "https://api.luxjson.is-a.dev");
+  assert.ok(spec.paths && Object.keys(spec.paths).length >= 15, "OpenAPI spec must document the API routes");
+  assert.ok(spec.paths["/api/blog/posts"], "Blog list/create contract must be documented");
+  assert.ok(spec.paths["/api/blog/posts/{identifier}"], "Blog read/update/delete contract must be documented");
+  assert.ok(spec.paths["/api/community/posts/{id}/like"], "Community like contract must be documented");
+  assert.ok(spec.paths["/api/community/admin/posts/{id}/moderate"], "Moderation contract must be documented");
+  assert.ok(spec.components?.schemas?.ErrorResponse, "Common error response schema must be documented");
 
   const docs = await fetch(`${baseUrl}/docs`);
   assert.equal(docs.status, 200);

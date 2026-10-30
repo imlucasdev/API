@@ -20,15 +20,23 @@ module.exports = async (req, res, next) => {
     return next();
   }
 
+  let decoded;
   try {
-    const decoded = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] });
-    const id = Number(decoded?.id);
-    if (!decoded || typeof decoded !== "object" || !Number.isSafeInteger(id) || id < 1) {
-      req.authUser = null;
-      req.user = null;
-      return next();
-    }
+    decoded = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] });
+  } catch {
+    req.authUser = null;
+    req.user = null;
+    return next();
+  }
 
+  const id = Number(decoded?.id);
+  if (!decoded || typeof decoded !== "object" || !Number.isSafeInteger(id) || id < 1) {
+    req.authUser = null;
+    req.user = null;
+    return next();
+  }
+
+  try {
     let identity = null;
     if (decoded.role === "user") {
       const user = await CommunityUsersRepository.findById(id);
@@ -41,9 +49,7 @@ module.exports = async (req, res, next) => {
     req.authUser = identity;
     req.user = identity;
     return next();
-  } catch {
-    req.authUser = null;
-    req.user = null;
-    return next();
+  } catch (error) {
+    return next(error);
   }
 };

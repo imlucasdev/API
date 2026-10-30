@@ -48,11 +48,13 @@ function errorHandler(error, req, res, next) {
     });
   }
 
-  if (
-    ["57014", "57P01", "57P02", "57P03", "08000", "08003", "08006", "08001"].includes(
-      error?.code,
-    )
-  ) {
+  const transientDatabaseCodes = new Set([
+    "57014", "57P01", "57P02", "57P03", "57P04", "53300",
+    "08000", "08001", "08003", "08004", "08006", "08007", "08P01",
+    "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EHOSTUNREACH",
+    "ENETUNREACH", "EPIPE", "ENOTFOUND", "EAI_AGAIN",
+  ]);
+  if (transientDatabaseCodes.has(error?.code) || String(error?.code || "").startsWith("08")) {
     return res.status(503).json({
       success: false,
       code: "SERVICE_UNAVAILABLE",

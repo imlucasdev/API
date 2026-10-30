@@ -2,7 +2,7 @@ name: API Verification
 
 on:
   push:
-    branches: [main, security/layered-api-hardening-20261028]
+    branches: [main, security/layered-api-hardening-20261028, audit/api-flow-hardening-20261029]
   pull_request:
   workflow_dispatch:
 
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: npm install
+      - run: npm ci
       - name: Report dependency advisories
         run: |
           npm audit --json > audit-report.json || true

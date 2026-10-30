@@ -1,3 +1,7 @@
+"use strict";
+
+console.info(`[runtime] LUXJSON API Node.js ${process.version}`);
+
 const path = require("node:path");
 const express = require("express");
 const cors = require("cors");
@@ -6,15 +10,14 @@ const morgan = require("morgan");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const hpp = require("hpp");
-const { env } = require("./config/env");
+const { env, validateEnv } = require("./config/env");
+validateEnv();
 const { pool } = require("./config/database");
 const swaggerSpec = require("./config/swagger");
 const { errorHandler, notFoundHandler } = require("./middleware/errorHandler");
 const authRoutes = require("./routes/authRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const communityRoutes = require("./routes/communityRoutes");
-
-console.info(`[runtime] LUXJSON API Node.js ${process.version}`);
 
 let scalarApiReferencePromise;
 
@@ -215,4 +218,8 @@ function createApp() {
   return app;
 }
 
-module.exports = { createApp };
+// Vercel detects this recognized Express entry file and requires the app instance.
+const vercelApp = createApp();
+vercelApp.createApp = createApp;
+
+module.exports = vercelApp;
