@@ -22,7 +22,11 @@ jobs:
           async function request(label, url, options = {}) {
             const response = await fetch(url, { signal: AbortSignal.timeout(15000), ...options });
             checks.push({ label, status: response.status });
-            if (!response.ok) throw new Error(label + " returned HTTP " + response.status);
+            if (!response.ok) {
+    const body = (await response.text()).slice(0, 300).replace(/[\\r\\n]+/g, " ");
+    console.log(JSON.stringify({ label, status: response.status, server: response.headers.get("server"), vercelId: response.headers.get("x-vercel-id"), body }));
+    throw new Error(label + " returned HTTP " + response.status);
+  }
             return response;
           }
 
