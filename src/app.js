@@ -14,6 +14,8 @@ const authRoutes = require("./routes/authRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const communityRoutes = require("./routes/communityRoutes");
 
+console.info(`[runtime] LUXJSON API Node.js ${process.version}`);
+
 let scalarApiReferencePromise;
 
 function getScalarApiReferenceHandler() {
