@@ -6,7 +6,7 @@ function start() {
   const { pool } = require("./src/config/database");
   const app = createApp();
   const server = app.listen(env.port, () => {
-    console.log(`LUXJSON API listening on port ${env.port} (${env.nodeEnv}).`);
+    console.log(`LUXJSON API listening on port ${env.port} (${env.nodeEnv}; ${process.version}).`);
   });
 
   let shuttingDown = false;
