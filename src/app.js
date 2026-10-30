@@ -10,7 +10,8 @@ const morgan = require("morgan");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const hpp = require("hpp");
-const { env } = require("./config/env");
+const { env, validateEnv } = require("./config/env");
+validateEnv();
 const { pool } = require("./config/database");
 const swaggerSpec = require("./config/swagger");
 const { errorHandler, notFoundHandler } = require("./middleware/errorHandler");
@@ -217,4 +218,8 @@ function createApp() {
   return app;
 }
 
-module.exports = { createApp };
+// Vercel detects this recognized Express entry file and requires the app instance.
+const vercelApp = createApp();
+vercelApp.createApp = createApp;
+
+module.exports = vercelApp;
