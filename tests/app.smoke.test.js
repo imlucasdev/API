@@ -8,8 +8,15 @@ process.env.CORS_ORIGINS = "http://localhost:5173";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createApp } = require("../src/app");
+const exportedExpressApp = require("../src/app");
+const { createApp } = exportedExpressApp;
 const { pool } = require("../src/config/database");
+
+test("Vercel-recognized Express entry exports an application instance", () => {
+  assert.equal(typeof exportedExpressApp, "function");
+  assert.equal(typeof exportedExpressApp.createApp, "function");
+  assert.equal(typeof exportedExpressApp.listen, "function");
+});
 
 test("API app boots and serves the expected public surfaces securely", async (t) => {
   const app = createApp();
