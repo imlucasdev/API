@@ -29,6 +29,7 @@
           }
           .avatar {
             margin-bottom: 10px;
+            max-width: 100px;
           }
 
           .card {
