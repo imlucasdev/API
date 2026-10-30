@@ -57,7 +57,26 @@ test("API app boots and serves the expected public surfaces securely", async (t)
 
   const docs = await fetch(`${baseUrl}/docs`);
   assert.equal(docs.status, 200);
-  assert.match(docs.headers.get("content-security-policy") || "", /frame-ancestors 'none'/);
+  const docsCsp = docs.headers.get("content-security-policy") || "";
+  assert.match(docsCsp, /frame-ancestors 'none'/);
+  const docsNonce = docsCsp.match(/'nonce-([^']+)'/)?.[1];
+  assert.ok(docsNonce, "Scalar docs must receive a fresh CSP nonce.");
+  assert.doesNotMatch(docsCsp, /'unsafe-eval'/);
+  assert.match(docsCsp, /font-src[^;]*https:\/\/fonts\.scalar\.com/);
+  assert.equal(docs.headers.get("cache-control"), "private, no-store");
+
+  const docsHtml = await docs.text();
+  const zodConfigIndex = docsHtml.indexOf("globalThis.__zod_globalConfig");
+  const scalarBundleIndex = docsHtml.indexOf("cdn.jsdelivr.net/npm/@scalar/api-reference");
+  assert.ok(zodConfigIndex >= 0, "Zod JIT must be disabled before Scalar loads.");
+  assert.ok(scalarBundleIndex > zodConfigIndex, "Zod configuration must execute before the Scalar bundle.");
+  assert.ok(docsHtml.includes(`nonce="${docsNonce}"`), "Scalar scripts and the Zod bootstrap must use the response nonce.");
+
+  const secondDocs = await fetch(`${baseUrl}/docs`);
+  const secondDocsCsp = secondDocs.headers.get("content-security-policy") || "";
+  const secondDocsNonce = secondDocsCsp.match(/'nonce-([^']+)'/)?.[1];
+  assert.ok(secondDocsNonce);
+  assert.notEqual(secondDocsNonce, docsNonce, "Every documentation response must use a new nonce.");
 
   const anonymousAdmin = await fetch(`${baseUrl}/api/blog/stats`);
   assert.equal(anonymousAdmin.status, 401);

@@ -2,6 +2,7 @@
 
 console.info(`[runtime] LUXJSON API Node.js ${process.version}`);
 
+const { randomBytes } = require("node:crypto");
 const path = require("node:path");
 const express = require("express");
 const cors = require("cors");
@@ -19,30 +20,31 @@ const authRoutes = require("./routes/authRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const communityRoutes = require("./routes/communityRoutes");
 
-let scalarApiReferencePromise;
+let scalarApiReferenceFactoryPromise;
 
-function getScalarApiReferenceHandler() {
-  if (!scalarApiReferencePromise) {
-    scalarApiReferencePromise = import("@scalar/express-api-reference")
-      .then(({ apiReference }) =>
-        apiReference({
-          spec: { content: swaggerSpec },
-          theme: "purple",
-          pageTitle: "API Documentation | LUXJSON",
-          favicon: "https://luxjson.is-a.dev/favicon.ico",
-          showDeveloperTools: "never",
-          hideVersion: true,
-          hideDownloadButton: true,
-          hiddenClients: true,
-        }),
-      )
+function getScalarApiReferenceHandler(nonce) {
+  if (!scalarApiReferenceFactoryPromise) {
+    scalarApiReferenceFactoryPromise = import("@scalar/express-api-reference")
+      .then(({ apiReference }) => apiReference)
       .catch((error) => {
-        scalarApiReferencePromise = undefined;
+        scalarApiReferenceFactoryPromise = undefined;
         throw error;
       });
   }
 
-  return scalarApiReferencePromise;
+  return scalarApiReferenceFactoryPromise.then((apiReference) =>
+    apiReference({
+      url: "/swagger.json",
+      theme: "purple",
+      pageTitle: "API Documentation | LUXJSON",
+      favicon: "https://luxjson.is-a.dev/favicon.ico",
+      showDeveloperTools: "never",
+      hideVersion: true,
+      documentDownloadType: "none",
+      hiddenClients: true,
+      nonce,
+    }),
+  );
 }
 
 morgan.token("path", (req) => req.path);
@@ -71,19 +73,21 @@ const rootPolicy = [
   ...(env.isProduction ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
 
-const docsPolicy = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-  "form-action 'self'",
-  "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
-  "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
-  "img-src 'self' data: https:",
-  "connect-src 'self' https://api.github.com",
-  "frame-src 'none'",
-].join("; ");
+function createDocsPolicy(nonce) {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    `script-src 'self' 'nonce-${nonce}'`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+    "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net https://fonts.scalar.com",
+    "img-src 'self' data: https:",
+    "connect-src 'self' https://api.github.com",
+    "frame-src 'none'",
+  ].join("; ");
+}
 
 function createApp() {
   const app = express();
@@ -92,13 +96,18 @@ function createApp() {
   if (env.isProduction) app.set("trust proxy", env.trustProxyHops);
 
   app.use((req, res, next) => {
-    res.setHeader("Cache-Control", req.path.startsWith("/api") ? "no-store" : "public, max-age=3600");
-    res.setHeader(
-      "Content-Security-Policy",
-      req.path === "/docs" || req.path.startsWith("/docs/")
-        ? docsPolicy
-        : rootPolicy,
-    );
+    const isDocsRequest = req.path === "/docs" || req.path.startsWith("/docs/");
+    const nonce = isDocsRequest ? randomBytes(18).toString("base64") : null;
+
+    if (isDocsRequest) {
+      res.locals.scalarCspNonce = nonce;
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("Content-Security-Policy", createDocsPolicy(nonce));
+    } else {
+      res.setHeader("Cache-Control", req.path.startsWith("/api") ? "no-store" : "public, max-age=3600");
+      res.setHeader("Content-Security-Policy", rootPolicy);
+    }
+
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
     next();
   });
@@ -166,7 +175,20 @@ function createApp() {
 
   app.use("/docs", async (req, res, next) => {
     try {
-      const handler = await getScalarApiReferenceHandler();
+      const nonce = res.locals.scalarCspNonce;
+      const originalSend = res.send;
+
+      res.send = function sendWithZodJitlessConfig(body) {
+        if (typeof body === "string" && /<head\b[^>]*>/i.test(body)) {
+          const zodConfigScript =
+            `<script nonce="${nonce}">globalThis.__zod_globalConfig = Object.assign(globalThis.__zod_globalConfig || {}, { jitless: true });</script>`;
+          body = body.replace(/(<head\b[^>]*>)/i, `$1${zodConfigScript}`);
+        }
+
+        return originalSend.call(this, body);
+      };
+
+      const handler = await getScalarApiReferenceHandler(nonce);
       return handler(req, res, next);
     } catch (error) {
       return next(error);
