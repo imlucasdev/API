@@ -18,13 +18,13 @@ async function getPublishedPost(slug) {
     throw new AppError(404, "POST_NOT_FOUND", "Post não encontrado.");
   }
   await BlogRepository.incrementViews(slug);
-  return post;
+  return { ...post, content: sanitizePostHtml(post.content) };
 }
 
 async function getPostForAdmin(id) {
   const post = await BlogRepository.findById(id);
   if (!post) throw new AppError(404, "POST_NOT_FOUND", "Post não encontrado.");
-  return post;
+  return { ...post, content: sanitizePostHtml(post.content) };
 }
 
 async function getStats() {
