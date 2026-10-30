@@ -6,7 +6,7 @@ const { env } = require("../config/env");
 
 module.exports = async (req, res, next) => {
   const header = req.get("authorization");
-  if (typeof header !== "string" || !/^Bearer\\s+\\S+$/i.test(header)) {
+  if (typeof header !== "string" || !/^Bearer\s+\S+$/i.test(header)) {
     return res.status(401).json({
       success: false,
       code: "AUTH_REQUIRED",
@@ -16,7 +16,7 @@ module.exports = async (req, res, next) => {
 
   let decoded;
   try {
-    const token = header.replace(/^Bearer\\s+/i, "").trim();
+    const token = header.replace(/^Bearer\s+/i, "").trim();
     decoded = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] });
   } catch {
     return res.status(401).json({
