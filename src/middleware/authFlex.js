@@ -8,7 +8,7 @@ const { env } = require("../config/env");
 function getBearerToken(req) {
   const header = req.get("authorization");
   if (typeof header !== "string") return null;
-  const match = header.match(/^Bearer\\s+(.+)$/i);
+  const match = header.match(/^Bearer\s+(.+)$/i);
   return match ? match[1].trim() : null;
 }
 
